@@ -1,23 +1,50 @@
 from collections import deque
+from lib2to3.pytree import convert
 import random
 import sys
+from tkinter import Variable
 import numpy as np
-import torch
 from AISettings.AISettingsInterface import Config
 from model import DDQN
+import json
+
+import tensorflow as tf
+from tensorflow import (
+    Variable,
+    convert_to_tensor,
+    expand_dims,
+    stack,
+    squeeze
+)
+from tensorflow.keras.models import load_model
+from tensorflow.compat.v1.train import exponential_decay
+from tensorflow.math import argmax
+
+
+def state_preprocess(state):
+    return np.swapaxes(
+            np.swapaxes(
+                np.swapaxes(
+                    state, 0, 3
+                ), 1, 2
+            ), 0, 1
+        )
 
 #based on pytorch RL tutorial by yfeng997: https://github.com/yfeng997/MadMario/blob/master/agent.py
 class AIPlayer:
     def __init__(self, state_dim, action_space_dim, save_dir, date, config: Config):
+        self.config = config
         self.state_dim = state_dim
         self.action_space_dim = action_space_dim
         self.save_dir = save_dir
         self.date = date
-        self.device = "cpu"
-        if torch.cuda.is_available():
-            self.device = "cuda"
 
-        self.net = DDQN(self.state_dim, self.action_space_dim).to(device=self.device)
+        self.net = DDQN(
+            self.state_dim,
+            self.action_space_dim,
+            self.config.learning_rate,
+            self.config.learning_rate_decay
+        )
 
         self.config = config
 
@@ -37,9 +64,6 @@ class AIPlayer:
             Q learning
         """
         self.gamma = self.config.gamma
-        self.optimizer = torch.optim.Adam(self.net.parameters(), lr=self.config.learning_rate)
-        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=self.config.learning_rate_decay)
-        self.loss_fn = torch.nn.SmoothL1Loss()
         self.burnin = self.config.burnin  # min. experiences before training
         self.learn_every = self.config.learn_every  # no. of experiences between updates to Q_online
         self.sync_every = self.config.sync_every  # no. of experiences between Q_target & Q_online sync
@@ -59,12 +83,16 @@ class AIPlayer:
         # EXPLOIT
         else:
             state = np.array(state)
-            state = torch.tensor(state).float().to(device=self.device)
-            state = state.unsqueeze(0)
-            
+            state = convert_to_tensor(state, dtype=tf.float32)
+            state = expand_dims(state, 0)
 
+            # road from shape (1, 4, 20, 16) to (20, 16, 4)
+            state = state_preprocess(np.array(state))
+            
             neuralNetOutput = self.net(state, model="online")
-            actionIdx = torch.argmax(neuralNetOutput, axis=1).item()
+            neuralNetOutput = np.array(neuralNetOutput).squeeze()
+
+            actionIdx = np.argmax(neuralNetOutput)
 
         # decrease exploration_rate
         self.exploration_rate *= self.exploration_rate_decay
@@ -89,11 +117,11 @@ class AIPlayer:
         state = np.array(state)
         next_state = np.array(next_state)
 
-        state = torch.tensor(state).float().to(device=self.device)
-        next_state = torch.tensor(next_state).float().to(device=self.device)
-        action = torch.tensor([action]).to(device=self.device)
-        reward = torch.tensor([reward]).to(device=self.device)
-        done = torch.tensor([done]).to(device=self.device)
+        state = convert_to_tensor(state, dtype=tf.float32)
+        next_state = convert_to_tensor(next_state, dtype=tf.float32)
+        action = convert_to_tensor([action])
+        reward = convert_to_tensor([reward])
+        done = convert_to_tensor([done])
 
         self.memory.append((state, next_state, action, reward, done))
 
@@ -102,8 +130,8 @@ class AIPlayer:
         Retrieve a batch of experiences from memory
         """
         batch = random.sample(self.memory, self.batch_size)
-        state, next_state, action, reward, done = map(torch.stack, zip(*batch))
-        return state, next_state, action.squeeze(), reward.squeeze(), done.squeeze()
+        state, next_state, action, reward, done = map(stack, zip(*batch))
+        return state, next_state, squeeze(action), squeeze(reward), squeeze(done)
 
     def learn(self):
         """Update online action value (Q) function with a batch of experiences"""
@@ -129,22 +157,19 @@ class AIPlayer:
         td_tgt = self.td_target(reward, next_state, done)
 
         # Backpropagate loss through Q_online
-        loss = self.update_Q_online(td_est, td_tgt)
+        loss = self.update_Q_online(state, td_est, td_tgt)
 
-        return (td_est.mean().item(), loss)
+        return (td_est.mean().numpy()[0], loss)
 
-    def update_Q_online(self, td_estimate, td_target):
-        loss = self.loss_fn(td_estimate, td_target)
-        self.optimizer.zero_grad()
-        loss.backward()
-        self.optimizer.step()
+    def update_Q_online(self, state, td_estimate, td_target):
+        self.net.backward('online', state, td_target)
+        loss = self.net.loss_fn(td_estimate, td_target)
 
-        self.scheduler.step() #
-
-        return loss.item()
+        return loss.item().numpy()[0]
 
     def sync_Q_target(self):
-        self.net.target.load_state_dict(self.net.online.state_dict())
+        for paramTarget, paramOnline in zip(self.net.target.trainable_variables, self.net.online.trainable_variables):
+            paramTarget.assign(paramOnline.value())
 
     def td_estimate(self, state, action):
         """
@@ -154,18 +179,19 @@ class AIPlayer:
         current_Q = modelOutPut[np.arange(0, self.batch_size), action]  # Q_online(s,a)
         return current_Q
 
-    @torch.no_grad()
     def td_target(self, reward, next_state, done):
         """
             Output is batch_size number of Q*(s,a) = r + (1-done) * gamma * Q_target(s', argmax_a'( Q_online(s',a') ) )
         """
         next_state_Q = self.net(next_state, model="online") 
-        best_action = torch.argmax(next_state_Q, axis=1) # argmax_a'( Q_online(s',a') ) 
+        best_action = argmax(next_state_Q, axis=1) # argmax_a'( Q_online(s',a') ) 
         next_Q = self.net(next_state, model="target")[np.arange(0, self.batch_size), best_action] # Q_target(s', argmax_a'( Q_online(s',a') ) )
         return (reward + (1 - done.float()) * self.gamma * next_Q).float() # Q*(s,a)
 
     def loadModel(self, path):
-        dt = torch.load(path, map_location=torch.device(self.device))
+        dt = load_model(path)
+        for paramOnline, paramDt in zip(self.net.online.trainable_variables, dt.trainable_variables):
+            paramOnline.assign(paramDt.value())
         self.net.load_state_dict(dt["model"])
         self.exploration_rate = dt["exploration_rate"]
         print(f"Loading model at {path} with exploration rate {self.exploration_rate}")
@@ -190,8 +216,9 @@ class AIPlayer:
             Save the state to directory
         """
         save_path = (self.save_dir / f"mario_net_0{int(self.curr_step // self.save_every)}.chkpt")
-        torch.save(
-            dict(model=self.net.state_dict(), exploration_rate=self.exploration_rate),
-            save_path,
-        )
+        self.net.online.save(save_path)
+        #torch.save(
+            #dict(model=self.net.state_dict(), exploration_rate=self.exploration_rate),
+            #save_path,
+        #)
         print(f"MarioNet saved to {save_path} at step {self.curr_step}")

@@ -35,10 +35,10 @@ gamesFolder = Path("games")
 games = [os.path.join(gamesFolder, f) for f in os.listdir(gamesFolder) if (os.path.isfile(os.path.join(gamesFolder, f)) and f.endswith(".gb"))]
 gameNames = [f.replace(".gb", "") for f in os.listdir(gamesFolder) if (os.path.isfile(os.path.join(gamesFolder, f)) and f.endswith(".gb"))]
 
-print("Avaliable games: ", games)
+print("Avalaible games: ", games)
 for cnt, gameName in enumerate(games, 1):
-    sys.stdout.write("[%d] %s\n\r" % (cnt, gameName))
-	
+	sys.stdout.write("[%d] %s\n\r" % (cnt, gameName))
+
 choice = int(input("Select game[1-%s]: " % cnt)) - 1
 game = games[choice]
 gameName = gameNames[choice]
@@ -108,8 +108,8 @@ env = FrameStack(env, num_stack=frameStack)
 """
   Load AI players
 """
-aiPlayer = AIPlayer((frameStack,) + gameDimentions, len(filteredActions), save_dir, now, aiSettings.GetHyperParameters())
-bossAiPlayer = AIPlayer((frameStack,) + gameDimentions, len(filteredActions), save_dir_boss, now, aiSettings.GetBossHyperParameters())
+aiPlayer = AIPlayer(gameDimentions + (frameStack,), len(filteredActions), save_dir, now, aiSettings.GetHyperParameters())
+bossAiPlayer = AIPlayer(gameDimentions + (frameStack,), len(filteredActions), save_dir_boss, now, aiSettings.GetBossHyperParameters())
 
 if mode < 2:  # evaluate
 	# load model
@@ -162,8 +162,8 @@ if train:
 
 	print("Training mode")
 	print("Total Episodes: ", episodes)
-	aiPlayer.net.train()
-	bossAiPlayer.net.train()
+	#aiPlayer.net.train() # we don't need this in tf
+	#bossAiPlayer.net.train() # we don't need this in tf
 
 	player = aiPlayer
 	for e in range(episodes):
@@ -185,7 +185,7 @@ if train:
 			# Learn
 			q, loss = player.learn()
 			# Logging
-			logger.log_step(reward, loss, q, player.scheduler.get_last_lr())
+			logger.log_step(reward, loss, q, player.net.online.optimizer.lr.value())
 			# Update state
 			observation = next_observation
 

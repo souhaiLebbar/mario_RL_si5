@@ -1,6 +1,5 @@
 import gym
 from skimage import transform
-from torchvision import transforms as T
 from gym.spaces import Box
 
 class ResizeObservation(gym.ObservationWrapper):

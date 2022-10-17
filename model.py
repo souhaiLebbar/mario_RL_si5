@@ -1,34 +1,48 @@
-import torch.nn as nn
-import copy
+import tensorflow as tf
+import numpy as np
+from tensorflow.keras import Sequential
+from tensorflow.keras.layers import Dense, Conv2D, Flatten
+from tensorflow.keras.models import clone_model
+from tensorflow.keras.optimizers import Adam
+from tensorflow.compat.v1.losses import huber_loss
 
-# based on pytorch tutorial by yfeng997: https://github.com/yfeng997/MadMario/blob/master/neural.py
 
-class DDQN(nn.Module):
-    def __init__(self, input_dim, output_dim):
-        super().__init__()
-        c, h, w = input_dim
-    
-        self.online = nn.Sequential(
-            nn.Conv2d(in_channels=c, out_channels=16, kernel_size=4, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=16, out_channels=32, kernel_size=4, stride=1),
-            nn.ReLU(),
-            nn.Conv2d(in_channels=32, out_channels=32, kernel_size=2, stride=1),
-            nn.ReLU(),
-            nn.Flatten(),
-            nn.Linear(3744, 512),
-            nn.ReLU(),
-            nn.Linear(512, output_dim)
-        )
 
-        self.target = copy.deepcopy(self.online)
+class DDQN:
+    def __init__(self, input_dim, output_dim, learning_rate, learning_rate_decay):
 
-        # Q_target parameters are frozen.
-        for p in self.target.parameters():
-           p.requires_grad = False
+        self.online = Sequential()
+        self.online.add(Conv2D(16, (4, 4), strides=(1, 1), activation='relu', input_shape=input_dim))
+        self.online.add(Conv2D(32, (4, 4), strides=(1, 1), activation='relu'))
+        self.online.add(Conv2D(32, (2, 2), strides=(1, 1), activation='relu'))
+        self.online.add(Flatten())
+        self.online.add(Dense(512, activation='relu'))
+        self.online.add(Dense(output_dim, activation='relu'))
 
-    def forward(self, input, model):
-        if model == "online":
-            return self.online(input)
-        elif model == "target":
-            return self.target(input)
+        self.loss_fn = huber_loss
+        self.optimizer = Adam(learning_rate=learning_rate)
+        self.learning_rate_decay = learning_rate_decay
+
+        self.online.compile(optimizer=self.optimizer, metrics=['accuracy'])
+
+        self.target = clone_model(self.online)
+
+        # Q_target parameters are frozen
+        for layer in self.target.layers:
+            layer.trainable = False
+
+    def __call__(self, input, model):
+        if model == 'online':
+            return self.online.predict(np.array([input]))[0]
+        elif model == 'target':
+            return self.target.predict(np.array([input]))[0]
+
+    def backward(self, model, inputs, labels):
+        model = self.online if model == "online" else self.target
+        model.fit(inputs, labels, epochs=1, verbose=0)
+        self.optimizer.lr.assign(self.optimizer.lr.value() * self.learning_rate_decay)
+
+
+
+
+
