@@ -1,10 +1,10 @@
 import tensorflow as tf
 import numpy as np
-from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Dense, Conv2D, Flatten
-from tensorflow.keras.models import clone_model
-from tensorflow.keras.optimizers import Adam
-from tensorflow.compat.v1.losses import huber_loss
+from tensorflow.python.keras import Sequential
+from tensorflow.python.keras.layers import Dense, Conv2D, Flatten
+from tensorflow.python.keras.models import clone_model
+from tensorflow.python.keras.optimizers import Adam
+from tensorflow.python.compat.v1.losses import huber_loss
 
 
 
