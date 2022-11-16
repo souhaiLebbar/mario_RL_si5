@@ -71,12 +71,17 @@ class DQN(AISettingsInterface):
 
 
     def create_Q_network(self):
+
+
+        #问题在这个函数
+
+
         # first, set the input of networks
-        self.state_input = tf.placeholder("float", [None, self.state_dim1])
+        self.state_input = tf.placeholder("float", [None, self.state_dim1, self.state_dim2, self.state_dim3])
         # second, create the current_net
         with tf.variable_scope('current_net'):
             # first, set the network's weights
-            W1 = self.weight_variable([self.state_dim1, 50])
+            W1 = self.weight_variable([self.state_dim3, self.state_dim2,self.state_dim1, 50])
             b1 = self.bias_variable([50])
             W2 = self.weight_variable([50, 20])
             b2 = self.bias_variable([20])
@@ -92,7 +97,7 @@ class DQN(AISettingsInterface):
         # third, create the current_net
         with tf.variable_scope('target_net'):
             # first, set the network's weights
-            t_W1 = self.weight_variable([self.state_dim1, 50])
+            t_W1 = self.weight_variable([self.state_dim3, self.state_dim2,self.state_dim1, 50])
             t_b1 = self.bias_variable([50])
             t_W2 = self.weight_variable([50, 20])
             t_b2 = self.bias_variable([20])
@@ -140,6 +145,8 @@ class DQN(AISettingsInterface):
     # this is the function that use the network output the action
     def Choose_Action(self, state):
         # the output is a tensor, so the [0] is to get the output as a list
+
+        #如果更改create_Q_network（），添加input——state维度，此处代码出现问题
         Q_value = self.Q_value.eval(feed_dict={
             self.state_input: [state]
         })[0]
