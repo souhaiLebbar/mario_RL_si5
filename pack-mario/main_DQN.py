@@ -4,6 +4,14 @@ from CustomPyBoyGym import CustomPyBoyGym
 from wrappers import SkipFrame, ResizeObservation
 from gym.wrappers import FrameStack, NormalizeObservation
 from agent import DQN
+import numpy as np
+import tensorflow.compat.v1 as tf
+import copy
+
+
+
+
+tf.disable_v2_behavior()
 gameDimensions = (20, 16)
 frameStack = 4
 
@@ -24,34 +32,50 @@ filteredActions = aiSettings.GetActions()
 # filteredActions= [(3,0), (5,0), (4,0), (3, 5), (5, 4)]
 
 EPISODES=1000
-STEPS = 300
-# steps that copy the current_net's parameters to target_net
-UPDATE_STEP = 50
 BATCH_SIZE = 128
-
+print(env.observation_space.shape)
 observation=env.reset()
-print([observation])
-agent = DQN(env.observation_space, len(filteredActions))
+
+agent = DQN(env.observation_space, len(filteredActions),env)
 
 # # while True:
 # #     actions = filteredActions[0]
 # #     # Agent performs action and moves 1 frame
 # #     next_observation, reward, done, info = env.step(actions)
-#
-for episode in range(EPISODES):
-    # get the initial state
-    observation = env.reset()
-    for step in range(STEPS):
-        # get the action by state
-        action = agent.Choose_Action(observation)
-        # step the env forward and get the new state
-        next_state, reward, done, info = env.step(action)
-        # store the data in order to update the network in future
-        agent.Store_Data(observation, filteredActions, action, reward, next_state, done)
-        if len(agent.replay_buffer) > BATCH_SIZE:
-            agent.Train_Network(BATCH_SIZE)
-        if step % UPDATE_STEP == 0:
-            agent.Update_Target_Network()
-        state = next_state
-        if done:
-            break
+
+
+#save model and check for existing models
+folder = os.getcwd()
+imageList = os.listdir(folder)
+for item in imageList:
+    if os.path.isfile(os.path.join(folder, item)):
+        if item == 'dqn.h5':
+            tf.keras.models.load_model('dqn.h5')
+
+    for e in range(EPISODES):
+        state = env.reset()
+        actions = filteredActions[0]
+        for time_t in range(5000):
+
+
+            _next_state, _reward, _done, _ = env.step(actions)
+
+            _reward = -100 if _done else _reward
+
+            agent.save_exp(state, actions, _reward, _next_state, _done)
+
+            # train
+            state = copy.deepcopy(_next_state)
+
+            # if done is true
+            if _done:
+
+                print("episode: {}/{}, score: {}"
+                      .format(e, EPISODES, time_t))
+                break
+
+        agent.train_exp(32)
+
+        if (e + 1) % 10 == 0:
+            print("saving model")
+            agent.model.save('dqn.h5')

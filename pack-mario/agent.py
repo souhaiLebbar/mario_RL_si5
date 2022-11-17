@@ -1,25 +1,23 @@
 import random
 from asyncio import sleep
 import itertools
+
+from keras import Sequential
+from keras.layers import Dense, Flatten, Conv2D, MaxPool2D, AveragePooling1D, Dropout
 from pyboy import WindowEvent
 from AISettingsInterface import AISettingsInterface, Config
 
 import tensorflow.compat.v1 as tf
+
 tf.disable_v2_behavior()
 from collections import deque
 import numpy as np
-
-#reference : https://github.com/samurasun/RL/blob/master/DQN.py
-
 
 # experiences replay buffer size
 REPLAY_SIZE = 10000
 # discount factor for target Q to caculate the TD aim value
 GAMMA = 0.9
-# the start value of epsilon
-INITIAL_EPSILON = 0.5
-# the final value of epsilon
-FINAL_EPSILON = 0.01
+
 
 class GameState():
     def __init__(self, pyboy):
@@ -40,13 +38,11 @@ class GameState():
         self.world = game_wrapper.world
 
 
-
-
-class DQN(AISettingsInterface):
-    def __init__(self, observation_space, action_space):
-        self.realMax = []  # [[1,1, 2500], [1,1, 200]]
-
-
+class DQN():
+    def __init__(self, observation_space, action_space,_env):
+        self.model = None
+        self.memory = []  # [[1,1, 2500], [1,1, 200]]
+        self.env=_env
         # for DQN
 
         self.state_dim1 = observation_space.shape[0]
@@ -58,156 +54,72 @@ class DQN(AISettingsInterface):
         self.action_dim = action_space
         # init experience replay, the deque is a list that first-in & first-out
         self.replay_buffer = deque()
-        # you can create the network by the two parameters
-        self.create_Q_network()
-        # after create the network, we can define the training methods
-        self.create_updating_method()
-        # set the value in choose_action
-        self.epsilon = INITIAL_EPSILON
+
         # Init session
         self.session = tf.InteractiveSession()
         self.session.run(tf.global_variables_initializer())
+        self.cnn_model()
 
+        self.epsilon = 1
+        self.epsilon_decay = .995
+        self.epsilon_min = 0.1
 
+    def cnn_model(self):
+        input_shape=self.env.observation_space.shape
+        model = Sequential()
+        # model.add(Conv2D(32, (3, 3), activation='relu', input_shape=input_shape))
+        # model.add(Dropout(0.3))
+        # model.add(Flatten())
+        model.add(Dense(32, activation="relu",input_shape=input_shape[1:]))
+        model.add(Dense(16, activation='relu'))
+        model.add(Dense(5, activation='linear'))
+        model.add(Flatten())
+        model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
 
-    def create_Q_network(self):
+        return model
 
+    def save_exp(self, _state, _action, _reward, _next_state, _done):
+        # 将各种状态 存进memory中
+        self.memory.append((_state, _action, _reward, _next_state, _done))
 
-        #问题在这个函数/error here
+    def train_exp(self, batch_size):
+        self.model = self.cnn_model()
+        batches = min(batch_size, len(self.memory))
+        batches = np.random.choice(len(self.memory), batches)
 
+        for i in batches:
+            # pick out parameters from memory
+            _state, _action, _reward, _next_state, _done = self.memory[i]
 
-        # first, set the input of networks
-        self.state_input = tf.placeholder("float", [None, self.state_dim1, self.state_dim2, self.state_dim3])
-        # second, create the current_net
-        with tf.variable_scope('current_net'):
-            # first, set the network's weights
-            W1 = self.weight_variable([self.state_dim3, self.state_dim2,self.state_dim1, 50])
-            b1 = self.bias_variable([50])
-            W2 = self.weight_variable([50, 20])
-            b2 = self.bias_variable([20])
-            W3 = self.weight_variable([20, self.action_dim])
-            b3 = self.bias_variable([self.action_dim])
-            # second, set the layers
-            # hidden layer one
-            h_layer_one = tf.nn.relu(tf.matmul(self.state_input, W1) + b1)
-            # hidden layer two
-            h_layer_two = tf.nn.relu(tf.matmul(h_layer_one, W2) + b2)
-            # the output of current_net
-            self.Q_value = tf.matmul(h_layer_two, W3) + b3
-        # third, create the current_net
-        with tf.variable_scope('target_net'):
-            # first, set the network's weights
-            t_W1 = self.weight_variable([self.state_dim3, self.state_dim2,self.state_dim1, 50])
-            t_b1 = self.bias_variable([50])
-            t_W2 = self.weight_variable([50, 20])
-            t_b2 = self.bias_variable([20])
-            t_W3 = self.weight_variable([20, self.action_dim])
-            t_b3 = self.bias_variable([self.action_dim])
-            # second, set the layers
-            # hidden layer one
-            t_h_layer_one = tf.nn.relu(tf.matmul(self.state_input, t_W1) + t_b1)
-            # hidden layer two
-            t_h_layer_two = tf.nn.relu(tf.matmul(t_h_layer_one, t_W2) + t_b2)
-            # the output of current_net
-            self.target_Q_value = tf.matmul(t_h_layer_two, t_W3) + t_b3
-        # at last, solve the parameters replace problem
-        # the parameters of current_net
-        e_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='current_net')
-        # the parameters of target_net
-        t_params = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope='target_net')
-        # define the operation that replace the target_net's parameters by current_net's parameters
-        with tf.variable_scope('soft_replacement'):
-            self.target_replace_op = [tf.assign(t, e) for t, e in zip(t_params, e_params)]
+            # return reward
+            y_reward = _reward
+            # if not done, get a discounted reward
+            if not _done:
+                y_reward = _reward + GAMMA * np.amax(self.model.predict(_next_state)[0])
 
-    # the function that give the weight initial value
-    def weight_variable(self, shape):
-        initial = tf.truncated_normal(shape)
-        return tf.Variable(initial)
+            _y = self.model.predict(_state)
 
-    # the function that give the bias initial value
-    def bias_variable(self, shape):
-        initial = tf.constant(0.01, shape=shape)
-        return tf.Variable(initial)
+            _y[0][_action] = y_reward
 
-    # this the function that define the method to update the current_net's parameters
-    def create_updating_method(self):
-        # this the input action, use one hot presentation
-        self.action_input = tf.placeholder("float", [None, self.action_dim])
-        # this the TD aim value
-        self.y_input = tf.placeholder("float", [None])
-        # this the action's Q_value
-        Q_action = tf.reduce_sum(tf.multiply(self.Q_value, self.action_input), reduction_indices=1)
-        # this is the lost
-        self.cost = tf.reduce_mean(tf.square(self.y_input - Q_action))
-        # use the loss to optimize the network
-        self.optimizer = tf.train.AdamOptimizer(0.0001).minimize(self.cost)
+            self.model.fit(_state, _y, epochs=1, verbose=0)
 
-    # this is the function that use the network output the action
-    def Choose_Action(self, state):
-        # the output is a tensor, so the [0] is to get the output as a list
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
 
-        #如果更改create_Q_network（），添加input——state维度，此处代码出现问题
-        Q_value = self.Q_value.eval(feed_dict={
-            self.state_input: [state]
-        })[0]
-        # use epsilon greedy to get the action
-        if random.random() <= self.epsilon:
-            # if lower than epsilon, give a random value
-            self.epsilon -= (INITIAL_EPSILON - FINAL_EPSILON) / 10000
-            return random.randint(0, self.action_dim - 1)
+    def act(self, _state):  # return a random number or the best reward
+        # return random
+        if np.random.rand() <= self.epsilon:
+            # print('000000000',self.env.action_space.sample())
+            return self.env.action_space.sample()
         else:
-            # if bigger than epsilon, give the argmax value
-            self.epsilon -= (INITIAL_EPSILON - FINAL_EPSILON) / 10000
-            return np.argmax(Q_value)
-
-    # this the function that store the data in replay memory
-    def Store_Data(self, state, all, action, reward, next_state, done):
-        # generate a list with all 0,and set the action is 1
-        one_hot_action = np.zeros(self.action_dim)
-        # place=all.index(action)
-        one_hot_action[action] = 1
-        # store all the elements
-        self.replay_buffer.append((state, one_hot_action, reward, next_state, done))
-        # if the length of replay_buffer is bigger than REPLAY_SIZE
-        # delete the left value, make the len is stable
-        if len(self.replay_buffer) > REPLAY_SIZE:
-            self.replay_buffer.popleft()
-
-    # train the network, update the parameters of Q_value
-    def Train_Network(self, BATCH_SIZE):
-        # Step 1: obtain random minibatch from replay memory
-        minibatch = random.sample(self.replay_buffer, BATCH_SIZE)
-        state_batch = [data[0] for data in minibatch]
-        action_batch = [data[1] for data in minibatch]
-        reward_batch = [data[2] for data in minibatch]
-        next_state_batch = [data[3] for data in minibatch]
-
-        # Step 2: calculate TD aim value
-        y_batch = []
-        # give the next_state_batch flow to target_Q_value and caculate the next state's Q_value
-        Q_value_batch = self.target_Q_value.eval(feed_dict={self.state_input: next_state_batch})
-        # caculate the TD aim value by the formulate
-        for i in range(0, BATCH_SIZE):
-            done = minibatch[i][4]
-            if done:
-                y_batch.append(reward_batch[i])
-            else:
-                # the Q value caculate use the max directly
-                y_batch.append(reward_batch[i] + GAMMA * np.max(Q_value_batch[i]))
-
-        # step 3: update the network
-        self.optimizer.run(feed_dict={
-            self.y_input: y_batch,
-            self.action_input: action_batch,
-            self.state_input: state_batch
-        })
-
-    def Update_Target_Network(self):
-        # update target Q netowrk
-        self.session.run(self.target_replace_op)
+            # return best
+            act_values = self.model.predict(_state)
+            return np.argmax(act_values[0])  # returns action
 
 
-#old codes
+
+
+    # old codes
     def GetReward(self, prevGameState: GameState, pyboy):
         """
         previousMario = mario before step is taken
