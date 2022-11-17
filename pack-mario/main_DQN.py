@@ -15,8 +15,8 @@ tf.disable_v2_behavior()
 gameDimensions = (20, 16)
 frameStack = 4
 
-pyboy = PyBoy("mario.gb", window_type="SDL2", window_scale=3, debug=False, game_wrapper=True)
-
+# pyboy = PyBoy("mario.gb", window_type="SDL2", window_scale=3, debug=False, game_wrapper=True)
+pyboy = PyBoy("mario.gb", window_type="headless", window_scale=3, debug=False, game_wrapper=True)
 env = CustomPyBoyGym(pyboy, observation_type="tiles")
 aiSettings = MarioAI()
 env.setAISettings(aiSettings)  # use this settings
@@ -33,9 +33,9 @@ filteredActions = aiSettings.GetActions()
 
 EPISODES=1000
 BATCH_SIZE = 128
-print(env.observation_space.shape)
+# print(env.observation_space.shape)
 observation=env.reset()
-
+print(env.action_space)
 agent = DQN(env.observation_space, len(filteredActions),env)
 
 # # while True:
@@ -54,11 +54,13 @@ for item in imageList:
 
     for e in range(EPISODES):
         state = env.reset()
-        actions = filteredActions[0]
+
         for time_t in range(5000):
 
+            actions = agent.act(state)
 
-            _next_state, _reward, _done, _ = env.step(actions)
+            action=filteredActions[actions]
+            _next_state, _reward, _done, _ = env.step(action)
 
             _reward = -100 if _done else _reward
 

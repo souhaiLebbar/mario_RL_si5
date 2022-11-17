@@ -3,7 +3,7 @@ from asyncio import sleep
 import itertools
 
 from keras import Sequential
-from keras.layers import Dense, Flatten, Conv2D, MaxPool2D, AveragePooling1D, Dropout
+from keras.layers import Dense, Flatten, Conv2D, MaxPool2D, AveragePooling1D, Dropout, Conv1D
 from pyboy import WindowEvent
 from AISettingsInterface import AISettingsInterface, Config
 
@@ -40,7 +40,6 @@ class GameState():
 
 class DQN():
     def __init__(self, observation_space, action_space,_env):
-        self.model = None
         self.memory = []  # [[1,1, 2500], [1,1, 200]]
         self.env=_env
         # for DQN
@@ -58,19 +57,23 @@ class DQN():
         # Init session
         self.session = tf.InteractiveSession()
         self.session.run(tf.global_variables_initializer())
-        self.cnn_model()
+        self.model=self.cnn_model()
 
-        self.epsilon = 1
+        self.epsilon = 0.5
         self.epsilon_decay = .995
         self.epsilon_min = 0.1
 
     def cnn_model(self):
         input_shape=self.env.observation_space.shape
+        # input_shape=(4,20,16)
         model = Sequential()
-        # model.add(Conv2D(32, (3, 3), activation='relu', input_shape=input_shape))
+        # model.add(Conv2D(32, 3, 3, activation='relu', input_shape=input_shape))
+        # model.add(Conv1D(32, 3, activation='relu', input_shape=(20,16)))
         # model.add(Dropout(0.3))
+        # model.add(AveragePooling1D(3))
         # model.add(Flatten())
         model.add(Dense(32, activation="relu",input_shape=input_shape[1:]))
+        model.add(Dense(32, activation="relu"))
         model.add(Dense(16, activation='relu'))
         model.add(Dense(5, activation='linear'))
         model.add(Flatten())
@@ -79,7 +82,7 @@ class DQN():
         return model
 
     def save_exp(self, _state, _action, _reward, _next_state, _done):
-        # 将各种状态 存进memory中
+        # save all attributes into memory
         self.memory.append((_state, _action, _reward, _next_state, _done))
 
     def train_exp(self, batch_size):
@@ -109,12 +112,20 @@ class DQN():
     def act(self, _state):  # return a random number or the best reward
         # return random
         if np.random.rand() <= self.epsilon:
+
             # print('000000000',self.env.action_space.sample())
-            return self.env.action_space.sample()
+            random=np.random.randint(0, high=5)
+            return random
         else:
+
             # return best
-            act_values = self.model.predict(_state)
-            return np.argmax(act_values[0])  # returns action
+            # act_values = self.model.predict(_state)
+            # values= [num for elem in act_values for num in elem]
+            # max=np.argmax(act_values[0])
+            # max_act=values[max]
+            # print('shape:', act_values.shape)
+            max=0
+            return max  # returns action
 
 
 
