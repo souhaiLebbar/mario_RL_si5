@@ -59,7 +59,7 @@ class DQN():
         self.session.run(tf.global_variables_initializer())
         self.model=self.cnn_model()
 
-        self.epsilon = 1
+        self.epsilon = 0.5
         self.epsilon_decay = .995
         self.epsilon_min = 0.1
 
@@ -68,11 +68,11 @@ class DQN():
         # input_shape=(4,20,16)
         model = Sequential()
         # model.add(Conv2D(32, 3, 3, activation='relu', input_shape=input_shape))
-        # model.add(Conv1D(32, 3, activation='relu', input_shape=(20,16)))
-        # model.add(Dropout(0.3))
-        # model.add(AveragePooling1D(3))
-        # model.add(Flatten())
-        model.add(Dense(32, activation="relu",input_shape=input_shape[1:]))
+        model.add(Conv1D(32, 3, activation='relu', input_shape=(20,16)))
+        model.add(Dropout(0.3))
+        model.add(AveragePooling1D(3))
+        model.add(Flatten())
+        # model.add(Dense(32, activation="relu",input_shape=input_shape[1:]))
         model.add(Dense(32, activation="relu"))
         model.add(Dense(16, activation='relu'))
         model.add(Dense(5, activation='linear'))
