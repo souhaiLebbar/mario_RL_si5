@@ -59,7 +59,7 @@ class DQN():
         self.session.run(tf.global_variables_initializer())
         self.model=self.cnn_model()
 
-        self.epsilon = 0.5
+        self.epsilon = 1
         self.epsilon_decay = .995
         self.epsilon_min = 0.1
 
@@ -117,17 +117,25 @@ class DQN():
             random=np.random.randint(0, high=5)
             return random
         else:
-
             # return best
-            # act_values = self.model.predict(_state)
-            # values= [num for elem in act_values for num in elem]
-            # max=np.argmax(act_values[0])
-            # max_act=values[max]
-            # print('shape:', act_values.shape)
-            max=0
-            return max  # returns action
+            act_values = self.model.predict(_state)
+            values= [num for elem in act_values for num in elem]
+            max=np.argmax(act_values[0])
+            act=self.choose_act(max)
+            return act  # returns action
 
-
+# find action in filteredActions
+    def choose_act(self,max):
+        if max<80:
+            return 0
+        elif max<160:
+            return 1
+        elif max<240:
+            return 2
+        elif max<320:
+            return 3
+        elif max<400:
+            return 4
 
 
     # old codes

@@ -35,7 +35,7 @@ EPISODES=1000
 BATCH_SIZE = 128
 # print(env.observation_space.shape)
 observation=env.reset()
-print(env.action_space)
+
 agent = DQN(env.observation_space, len(filteredActions),env)
 
 # # while True:
